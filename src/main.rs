@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener =
         TcpListener::bind("127.0.0.1:6379").expect("failed binding tcp listener to adress");
 
-    let mut buf = [0u8; 1024];
+    let mut buf = vec![0u8; 512];
 
     for stream in listener.incoming() {
         match stream {
