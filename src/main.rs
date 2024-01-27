@@ -24,9 +24,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let len = stream.read(&mut buf)?;
                 let command = std::str::from_utf8(&buf[0..len]).expect("command not valid utf-8");
 
-                assert_eq!(&command, &r"*1\r\n$4\r\nping\r\n");
+                assert_eq!(&command, &"*1\r\n$4\r\nping\r\n");
 
-                stream.write_all(r"+PONG\r\n".as_bytes())?;
+                stream.write_all("+PONG\r\n".as_bytes())?;
             }
             Err(e) => {
                 info!("error: {}", e);
