@@ -12,21 +12,26 @@ async fn handle_connection(stream: TcpStream) -> Result<()> {
 
     loop {
         stream.readable().await?;
-        let len = stream
-            .try_read(&mut buf)
-            .context("failed to read stream contents into buffer")?;
+        let len = match stream.try_read(&mut buf) {
+            Ok(0) => {
+                // assume the connection is closed
+                debug!("connection closed");
+                return Ok(());
+            }
+            Ok(len) => len,
+            Err(e) if e.kind() == tokio::io::ErrorKind::WouldBlock => continue,
+            _ => bail!("failed to read stream contents into buffer"),
+        };
         let command = std::str::from_utf8(&buf[0..len]).context("command not valid utf-8")?;
         debug!("receiving command: {:?}", command);
         if command != "*1\r\n$4\r\nping\r\n" {
             bail!("can only support ping for now");
         }
-        // assert_eq!(
-        //     command, "*1\r\n$4\r\nping\r\n",
-        //     "can only support ping for now"
-        // );
 
         stream.writable().await?;
-        stream.try_write("+PONG\r\n".as_bytes())?;
+        stream
+            .try_write("+PONG\r\n".as_bytes())
+            .context("failed to write contents to buffer")?;
     }
 }
 
