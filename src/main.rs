@@ -28,7 +28,7 @@ async fn main() -> Result<()> {
     // initialize logging
     initialize_logging();
 
-    trace!("setting up tcp listener");
+    debug!("setting up tcp listener");
     let listener = TcpListener::bind("127.0.0.1:6379")
         .await
         .context("failed binding tcp listener to adress")?;
@@ -37,7 +37,7 @@ async fn main() -> Result<()> {
         let stream = listener.accept().await;
         match stream {
             Ok((stream, _)) => {
-                info!("accepted new connection");
+                debug!("accepted new connection");
                 task::spawn(handle_connection(stream));
             }
             Err(e) => {
@@ -51,7 +51,7 @@ fn initialize_logging() {
     use std::io::Write;
 
     env_logger::builder()
-        .filter_level(log::LevelFilter::Trace)
+        .filter_level(log::LevelFilter::Debug)
         .target(env_logger::Target::Stdout)
         .format(
             |buf, rec| match (rec.module_path(), rec.file(), rec.line()) {
