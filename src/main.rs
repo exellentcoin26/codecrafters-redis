@@ -1,42 +1,55 @@
-use anyhow::{Context, Result};
+#[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
-use std::{
-    io::{Read, Write},
-    net::TcpListener,
+
+use anyhow::{Context, Result};
+use tokio::{
+    net::{TcpListener, TcpStream},
+    task,
 };
 
-fn main() -> Result<()> {
-    // initialize logging
-    initialize_logging();
-
-    trace!("setting up tcp listener");
-    let listener =
-        TcpListener::bind("127.0.0.1:6379").context("failed binding tcp listener to adress")?;
+async fn handle_connection(stream: TcpStream) -> Result<()> {
+    stream.readable().await?;
 
     let mut buf = vec![0u8; 512];
+    let len = stream
+        .try_read(&mut buf)
+        .context("failed to read stream contents into buffer")?;
+    let command = std::str::from_utf8(&buf[0..len]).context("command not valid utf-8")?;
+    assert_eq!(&command, &"*1\r\n$4\r\nping\r\n");
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(mut stream) => {
-                info!("accepted new connection");
-                let len = stream.read(&mut buf)?;
-                let command =
-                    std::str::from_utf8(&buf[0..len]).context("command not valid utf-8")?;
-
-                assert_eq!(&command, &"*1\r\n$4\r\nping\r\n");
-
-                stream.write_all("+PONG\r\n".as_bytes())?;
-            }
-            Err(e) => {
-                info!("error: {}", e);
-            }
-        }
-    }
+    stream.writable().await?;
+    stream.try_write("+PONG\r\n".as_bytes())?;
 
     Ok(())
 }
 
+#[tokio::main]
+async fn main() -> Result<()> {
+    // initialize logging
+    initialize_logging();
+
+    trace!("setting up tcp listener");
+    let listener = TcpListener::bind("127.0.0.1:6379")
+        .await
+        .context("failed binding tcp listener to adress")?;
+
+    loop {
+        let stream = listener.accept().await;
+        match stream {
+            Ok((stream, _)) => {
+                info!("accepted new connection");
+                task::spawn(handle_connection(stream));
+            }
+            Err(e) => {
+                error!("failed to accept incoming connection: {}", e);
+            }
+        }
+    }
+}
+
 fn initialize_logging() {
+    use std::io::Write;
+
     env_logger::builder()
         .filter_level(log::LevelFilter::Trace)
         .target(env_logger::Target::Stdout)
