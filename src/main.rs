@@ -3,34 +3,28 @@ use log::{debug, error, info, trace, warn};
 
 use anyhow::{bail, Context, Result};
 use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     task,
 };
 
-async fn handle_connection(stream: TcpStream) -> Result<()> {
+async fn handle_connection(mut stream: TcpStream) -> Result<()> {
     let mut buf = vec![0u8; 512];
 
     loop {
-        stream.readable().await?;
-        let len = match stream.try_read(&mut buf) {
-            Ok(0) => {
-                // assume the connection is closed
-                debug!("connection closed");
-                return Ok(());
-            }
-            Ok(len) => len,
-            Err(e) if e.kind() == tokio::io::ErrorKind::WouldBlock => continue,
-            _ => bail!("failed to read stream contents into buffer"),
-        };
+        let len = stream
+            .read(&mut buf)
+            .await
+            .context("failed to read stream into buffer")?;
         let command = std::str::from_utf8(&buf[0..len]).context("command not valid utf-8")?;
         debug!("receiving command: {:?}", command);
         if command != "*1\r\n$4\r\nping\r\n" {
             bail!("can only support ping for now");
         }
 
-        stream.writable().await?;
         stream
-            .try_write("+PONG\r\n".as_bytes())
+            .write_all("+PONG\r\n".as_bytes())
+            .await
             .context("failed to write contents to buffer")?;
     }
 }
