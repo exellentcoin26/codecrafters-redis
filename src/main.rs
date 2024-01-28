@@ -1,26 +1,33 @@
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use tokio::{
     net::{TcpListener, TcpStream},
     task,
 };
 
 async fn handle_connection(stream: TcpStream) -> Result<()> {
-    stream.readable().await?;
-
     let mut buf = vec![0u8; 512];
-    let len = stream
-        .try_read(&mut buf)
-        .context("failed to read stream contents into buffer")?;
-    let command = std::str::from_utf8(&buf[0..len]).context("command not valid utf-8")?;
-    assert_eq!(&command, &"*1\r\n$4\r\nping\r\n");
 
-    stream.writable().await?;
-    stream.try_write("+PONG\r\n".as_bytes())?;
+    loop {
+        stream.readable().await?;
+        let len = stream
+            .try_read(&mut buf)
+            .context("failed to read stream contents into buffer")?;
+        let command = std::str::from_utf8(&buf[0..len]).context("command not valid utf-8")?;
+        debug!("receiving command: {:?}", command);
+        if command != "*1\r\n$4\r\nping\r\n" {
+            bail!("can only support ping for now");
+        }
+        // assert_eq!(
+        //     command, "*1\r\n$4\r\nping\r\n",
+        //     "can only support ping for now"
+        // );
 
-    Ok(())
+        stream.writable().await?;
+        stream.try_write("+PONG\r\n".as_bytes())?;
+    }
 }
 
 #[tokio::main]
@@ -38,7 +45,11 @@ async fn main() -> Result<()> {
         match stream {
             Ok((stream, _)) => {
                 debug!("accepted new connection");
-                task::spawn(handle_connection(stream));
+                task::spawn(async {
+                    if let Err(e) = handle_connection(stream).await {
+                        error!("connection failed: {}", e);
+                    }
+                });
             }
             Err(e) => {
                 error!("failed to accept incoming connection: {}", e);
