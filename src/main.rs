@@ -6,10 +6,7 @@ use std::{
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // initialize logging
-    env_logger::builder()
-        .filter_level(log::LevelFilter::Trace)
-        .target(env_logger::Target::Stdout)
-        .init();
+    initialize_logging();
 
     trace!("setting up tcp listener");
     let listener =
@@ -35,4 +32,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn initialize_logging() {
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Trace)
+        .target(env_logger::Target::Stdout)
+        .format(
+            |buf, rec| match (rec.module_path(), rec.file(), rec.line()) {
+                (Some(module_path), Some(file), Some(line)) => {
+                    writeln!(
+                        buf,
+                        "[{}][{}]({}:{}) {}",
+                        rec.level(),
+                        module_path,
+                        file,
+                        line,
+                        rec.args()
+                    )
+                }
+                _ => writeln!(buf, "[{}] {}", rec.level(), rec.args()),
+            },
+        )
+        .init();
 }
