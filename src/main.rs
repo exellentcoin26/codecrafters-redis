@@ -17,7 +17,7 @@ async fn handle_connection(mut stream: TcpStream) -> Result<()> {
             .await
             .context("failed to read stream into buffer")?;
         let command = std::str::from_utf8(&buf[0..len]).context("command not valid utf-8")?;
-        debug!("receiving command: {:?}", command);
+        debug!("Receiving command: {:?}", command);
         if command != "*1\r\n$4\r\nping\r\n" {
             bail!("can only support ping for now");
         }
@@ -31,10 +31,9 @@ async fn handle_connection(mut stream: TcpStream) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // initialize logging
     initialize_logging();
 
-    debug!("setting up tcp listener");
+    info!("Setting up tcp listener");
     let listener = TcpListener::bind("127.0.0.1:6379")
         .await
         .context("failed binding tcp listener to adress")?;
@@ -43,15 +42,15 @@ async fn main() -> Result<()> {
         let stream = listener.accept().await;
         match stream {
             Ok((stream, _)) => {
-                debug!("accepted new connection");
+                info!("Accepted new connection");
                 task::spawn(async {
                     if let Err(e) = handle_connection(stream).await {
-                        error!("connection failed: {}", e);
+                        error!("Connection failed: {}", e);
                     }
                 });
             }
             Err(e) => {
-                error!("failed to accept incoming connection: {}", e);
+                error!("Failed to accept incoming connection: {}", e);
             }
         }
     }
@@ -61,7 +60,7 @@ fn initialize_logging() {
     use std::io::Write;
 
     env_logger::builder()
-        .filter_level(log::LevelFilter::Debug)
+        .filter_level(log::LevelFilter::Info)
         .target(env_logger::Target::Stdout)
         .format(
             |buf, rec| match (rec.module_path(), rec.file(), rec.line()) {
@@ -79,5 +78,6 @@ fn initialize_logging() {
                 _ => writeln!(buf, "[{}] {}", rec.level(), rec.args()),
             },
         )
+        .filter_module("redis_starter_rust", log::LevelFilter::Trace)
         .init();
 }
