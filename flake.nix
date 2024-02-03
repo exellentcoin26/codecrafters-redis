@@ -21,6 +21,7 @@
       devShells.default = pkgs.mkShell {
         buildInputs = with pkgs; [
           rust-bin.stable."1.70.0".default
+          bacon
         ];
       };
     }
