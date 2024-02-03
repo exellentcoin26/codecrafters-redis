@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
 
-const CRLF: &str = r"\r\n";
+const CRLF: &str = "\r\n";
 
 const EMPTY_INPUT_ERROR_MSG: &str = "input cannot be empty";
 
@@ -15,15 +15,13 @@ impl DataType {
         if value.chars().next().context(EMPTY_INPUT_ERROR_MSG)? != '+' {
             bail!("expected first character to be `+` for simple string");
         }
+        let value = value[1..]
+            .strip_suffix(CRLF)
+            .context(format!(r"RESP lines should end in `{:?}`", CRLF))?;
         if value.contains('\n') || value.contains('\r') {
             bail!(r"input cannot contain `\r` or `\n`");
         }
-        Ok(DataType::SimpleString(
-            value[1..]
-                .strip_suffix(CRLF)
-                .context(format!(r"RESP lines should end in `{}`", CRLF))?
-                .to_string(),
-        ))
+        Ok(DataType::SimpleString(value.to_string()))
     }
 
     fn parse_as_array(value: &'_ str) -> Result<Self> {
@@ -74,13 +72,13 @@ mod tests {
 
     #[test]
     fn parse_simple_string() {
-        let simple_string = DataType::try_from(r"+PONG\r\n").unwrap();
+        let simple_string = DataType::try_from("+PONG\r\n").unwrap();
         assert_eq!(simple_string, DataType::SimpleString("PONG".to_string()));
     }
 
     #[test]
     fn parse_array() {
-        let array = DataType::try_from(r"*2\r\n+hello\r\n+world\r\n").unwrap();
+        let array = DataType::try_from("*2\r\n+hello\r\n+world\r\n").unwrap();
         assert_eq!(
             array,
             DataType::Array(Vec::from([
