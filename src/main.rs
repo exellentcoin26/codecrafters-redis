@@ -1,12 +1,15 @@
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
 
+use crate::redis::{Command, DataType};
 use anyhow::{bail, Context, Result};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     task,
 };
+
+mod redis;
 
 async fn handle_connection(mut stream: TcpStream) -> Result<()> {
     let mut buf = vec![0u8; 512];
@@ -18,6 +21,7 @@ async fn handle_connection(mut stream: TcpStream) -> Result<()> {
             .context("failed to read stream into buffer")?;
         let command = std::str::from_utf8(&buf[0..len]).context("command not valid utf-8")?;
         debug!("Receiving command: {:?}", command);
+
         if command != "*1\r\n$4\r\nping\r\n" {
             bail!("can only support ping for now");
         }
