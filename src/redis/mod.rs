@@ -1,5 +1,5 @@
 pub use command::Command;
-pub use data::model::RespValue;
+pub use value::model::RespValue;
 
 mod command;
-mod data;
+mod value;
