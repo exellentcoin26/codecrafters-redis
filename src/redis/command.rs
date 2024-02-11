@@ -1,6 +1,6 @@
 use crate::redis::RespValue;
 use anyhow::{bail, Context, Result};
-use bstr::BString;
+use bstr::{BStr, BString, ByteSlice};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
@@ -20,16 +20,26 @@ impl Command {
     }
 
     pub fn from_wire(wire: &'_ [u8]) -> Result<Self> {
-        let data = RespValue::from_resp(wire)?;
+        let value = RespValue::from_resp(wire)?;
+        Self::parse_single_command(value)
+    }
 
-        match data {
+    fn parse_single_command(value: RespValue) -> Result<Self> {
+        match value {
             RespValue::SimpleString(command) => Self::from_simple_string(&command),
-            RespValue::Array(array) => Self::from_array(array),
-            _ => bail!("unsupported data type for command"),
+            RespValue::BulkString(command) => Self::from_bulk_string(command.as_bstr()),
+            RespValue::Array(arr) => Self::from_array(arr),
         }
     }
 
+    fn from_bulk_string(command: &BStr) -> Result<Self> {
+        let command = std::str::from_utf8(command)
+            .context("command name contains invalid utf-8 characters")?;
+        Self::from_simple_string(command)
+    }
+
     fn from_simple_string(command: &'_ str) -> Result<Self> {
+        log::debug!("Command: {}", command.to_lowercase().as_str());
         Ok(match command.to_lowercase().as_str() {
             "ping" => Command::Ping,
             _ => bail!("unexpected command `{}`", command),
@@ -47,13 +57,14 @@ impl Command {
             _ => bail!("unexpeced data type as command name"),
         };
 
-        match command.to_lowercase().as_str() {
-            "echo" => Self::take_as_echo_args(array),
+        Ok(match command.to_lowercase().as_str() {
+            "echo" => Self::take_as_echo_args(&mut array)?,
+            "ping" => Self::Ping,
             _ => bail!("unexpected command `{}`", command),
-        }
+        })
     }
 
-    fn take_as_echo_args(mut args: impl Iterator<Item = RespValue>) -> Result<Self> {
+    fn take_as_echo_args(args: &mut impl Iterator<Item = RespValue>) -> Result<Self> {
         let value = match args
             .next()
             .context("echo command expects a single argument")?

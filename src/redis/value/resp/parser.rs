@@ -17,7 +17,7 @@ impl RespParser {
     pub(in crate::redis) fn parse_single(wire: &[u8]) -> Result<RespValue> {
         let mut wire = wire.split_str(CRLF);
         let result = Self::parse_resp(&mut wire)?;
-        match wire.take_while(|&l| matches!(l, b"")).next() {
+        match wire.find(|&l| !matches!(l, b"")) {
             None => Ok(result),
             Some(_) => bail!("wire is not empty after parsing a single resp value"),
         }

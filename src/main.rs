@@ -15,11 +15,17 @@ async fn handle_connection(mut stream: TcpStream) -> Result<()> {
     let mut buf = vec![0u8; 512];
 
     loop {
-        buf.clear();
         let len = stream
             .read(&mut buf)
             .await
             .context("failed to read stream into buffer")?;
+
+        if len == 0 {
+            debug!("Receiving empty input");
+            continue;
+        }
+
+        debug!("Receiving resp instructions: `{:?}`", &buf[0..len]);
         let command = Command::from_wire(&buf[0..len])?;
         debug!("Receiving command: {:?}", command);
 
