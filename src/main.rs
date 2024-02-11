@@ -1,8 +1,8 @@
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
 
-use crate::redis::{Command, DataType};
-use anyhow::{bail, Context, Result};
+use crate::redis::Command;
+use anyhow::{Context, Result};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -15,21 +15,15 @@ async fn handle_connection(mut stream: TcpStream) -> Result<()> {
     let mut buf = vec![0u8; 512];
 
     loop {
+        buf.clear();
         let len = stream
             .read(&mut buf)
             .await
             .context("failed to read stream into buffer")?;
-        let command = std::str::from_utf8(&buf[0..len]).context("command not valid utf-8")?;
+        let command = Command::from_wire(&buf[0..len])?;
         debug!("Receiving command: {:?}", command);
 
-        if command != "*1\r\n$4\r\nping\r\n" {
-            bail!("can only support ping for now");
-        }
-
-        stream
-            .write_all("+PONG\r\n".as_bytes())
-            .await
-            .context("failed to write contents to buffer")?;
+        stream.write_all(&command.to_wire()?).await?;
     }
 }
 
