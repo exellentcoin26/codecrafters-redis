@@ -32,12 +32,7 @@ impl RespParser {
         Ok(match first_byte {
             b'+' => Self::parse_simple_string(first_line.as_slice())?,
             b'*' => Self::parse_array(Self::parse_u32(first_line.as_slice())?, lines)?,
-            b'$' => Self::parse_bulk_string(
-                Self::parse_u32(first_line.as_slice())?,
-                lines
-                    .next()
-                    .context("missing second line for bulk string data")?,
-            )?,
+            b'$' => Self::parse_bulk_string(Self::parse_i32(first_line.as_slice())?, lines)?,
             _ => bail!("unimplemented datatype `{:?}`", first_byte),
         })
     }
@@ -47,6 +42,13 @@ impl RespParser {
             .context(Error::InvalidUtf8)?
             .parse::<u32>()
             .context("failed to parse value as 32 bit unsigned integer")
+    }
+
+    fn parse_i32(value: &[u8]) -> Result<i32> {
+        std::str::from_utf8(value)
+            .context(Error::InvalidUtf8)?
+            .parse::<i32>()
+            .context("failed to parse value as 32 bit signed integer")
     }
 
     fn parse_simple_string(value: &'_ [u8]) -> Result<RespValue> {
@@ -67,8 +69,19 @@ impl RespParser {
         ))
     }
 
-    fn parse_bulk_string(length: u32, value: &'_ [u8]) -> Result<RespValue> {
-        if value.len() != length as usize {
+    fn parse_bulk_string<'b>(
+        length: i32,
+        lines: &mut impl Iterator<Item = &'b [u8]>,
+    ) -> Result<RespValue> {
+        if length == -1 {
+            return Ok(RespValue::Nil);
+        }
+        let length =
+            usize::try_from(length).context("bulk string length not a 32 bit unsigned value")?;
+        let value = lines
+            .next()
+            .context("missing second line for bulk string data")?;
+        if value.len() != length {
             bail!("bulk string value size is not equal to the expected size (expected: `{}`, got: `{}`)", value.len(), length);
         }
 

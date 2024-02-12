@@ -1,8 +1,10 @@
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
 
-use crate::redis::Command;
+use crate::redis::{database::DataBase, Command};
 use anyhow::{Context, Result};
+use bstr::ByteSlice;
+use std::{collections::HashMap, sync::Arc};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -11,7 +13,7 @@ use tokio::{
 
 mod redis;
 
-async fn handle_connection(mut stream: TcpStream) -> Result<()> {
+async fn handle_connection(mut stream: TcpStream, database: Arc<DataBase>) -> Result<()> {
     let mut buf = vec![0u8; 512];
 
     loop {
@@ -25,11 +27,13 @@ async fn handle_connection(mut stream: TcpStream) -> Result<()> {
             continue;
         }
 
-        debug!("Receiving resp instructions: `{:?}`", &buf[0..len]);
+        debug!("Receiving resp instructions: `{:?}`", buf[0..len].as_bstr());
         let command = Command::from_wire(&buf[0..len])?;
         debug!("Receiving command: {:?}", command);
 
-        stream.write_all(&command.to_wire()?).await?;
+        stream
+            .write_all(&command.execute(&database).await?.to_resp()?)
+            .await?;
     }
 }
 
@@ -42,13 +46,16 @@ async fn main() -> Result<()> {
         .await
         .context("failed binding tcp listener to adress")?;
 
+    let database = Arc::new(DataBase::new(HashMap::new()));
+
     loop {
         let stream = listener.accept().await;
         match stream {
             Ok((stream, _)) => {
                 info!("Accepted new connection");
+                let database = Arc::clone(&database);
                 task::spawn(async {
-                    if let Err(e) = handle_connection(stream).await {
+                    if let Err(e) = handle_connection(stream, database).await {
                         error!("Connection failed: {}", e);
                     }
                 });

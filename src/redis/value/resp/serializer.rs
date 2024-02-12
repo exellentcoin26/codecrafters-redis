@@ -18,6 +18,7 @@ impl RespSerializer {
                 write!(f, "*{}{}", arr.len(), CRLF)?;
                 arr.iter().try_for_each(|v| Self::serialize(&mut *f, v))
             }
+            RespValue::Nil => write!(f, "$-1{}{}", CRLF, CRLF),
         }
     }
 }
