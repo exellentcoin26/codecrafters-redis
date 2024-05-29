@@ -1,8 +1,10 @@
-use crate::redis::{database, RespValue};
+use std::time::Duration;
+
 use anyhow::{bail, Context, Result};
 use bstr::{BStr, BString, ByteSlice};
 
-use super::database::DataBase;
+use super::database::Database;
+use crate::redis::{database, RespValue};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
@@ -13,10 +15,16 @@ pub enum Command {
     Set {
         key: database::DataKey,
         value: database::DataValue,
+        opts: SetOptions,
     },
     Get {
         key: database::DataKey,
     },
+}
+
+#[derive(Debug, PartialEq, Eq, Default)]
+pub struct SetOptions {
+    expiry: Option<Duration>,
 }
 
 impl Command {
@@ -25,11 +33,11 @@ impl Command {
         CommandParser::parse_single_command(value)
     }
 
-    pub async fn execute(self, database: &DataBase) -> Result<RespValue> {
+    pub async fn execute(self, database: &Database) -> Result<RespValue> {
         Ok(match self {
             Command::Ping => RespValue::SimpleString("PONG".to_string()),
             Command::Echo { value } => RespValue::BulkString(value),
-            Command::Set { key, value } => {
+            Command::Set { key, value, .. } => {
                 let mut database = database.write().await;
                 database.insert(key, value);
                 RespValue::SimpleString("OK".to_string())
@@ -105,27 +113,59 @@ impl CommandParser {
         let key = Self::take_byte_string_argument(&mut *args)?;
         let value = Self::take_byte_string_argument(&mut *args)?;
 
-        Ok(Command::Set { key, value })
+        let mut opts = SetOptions::default();
+
+        while let Some(opt) = Self::take_optional_byte_string_argument(args)? {
+            match std::str::from_utf8(&opt)
+                .context("command key-value pair key argument contains invalid utf-8")?
+            {
+                "px" => {
+                    opts.expiry = Some(Duration::from_millis(Self::take_string_and_parse_u64(
+                        args,
+                    )?))
+                }
+                _ => bail!("unexpected option for set command: {}", opt),
+            }
+        }
+
+        Ok(Command::Set { key, value, opts })
     }
 
     fn take_byte_string_argument(args: &mut impl Iterator<Item = RespValue>) -> Result<BString> {
         Ok(
-            match args
-                .next()
-                .context("echo command expects a single argument")?
-            {
+            match args.next().context("command expected another argument")? {
                 RespValue::SimpleString(value) => BString::from(value),
                 RespValue::BulkString(command) => command,
                 _ => bail!("unexpected data type as command argument"),
             },
         )
     }
+
+    fn take_optional_byte_string_argument(
+        args: &mut impl Iterator<Item = RespValue>,
+    ) -> Result<Option<BString>> {
+        match args.next() {
+            Some(a) => Self::take_byte_string_argument(&mut std::iter::once(a)).map(Some),
+            None => Ok(None),
+        }
+    }
+
+    fn take_string_and_parse_u64(args: &mut impl Iterator<Item = RespValue>) -> Result<u64> {
+        let value = Self::take_byte_string_argument(args)?;
+        std::str::from_utf8(&value)
+            .context("integer value contains invalid utf-8")?
+            .parse::<u64>()
+            .context("string is not valid integer value")
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Command;
+    use std::time::Duration;
+
     use bstr::BString;
+
+    use super::{Command, SetOptions};
 
     #[test]
     fn parse_ping_command() {
@@ -173,7 +213,26 @@ mod tests {
             command,
             Command::Set {
                 key: BString::from("foo"),
-                value: BString::from("bar")
+                value: BString::from("bar"),
+                opts: SetOptions::default(),
+            }
+        )
+    }
+
+    #[test]
+    fn parse_set_with_expiry() {
+        let command = Command::from_wire(
+            b"*5\r\n$3\r\nset\r\n$9\r\nelephants\r\n$6\r\nhorses\r\n$2\r\npx\r\n$3\r\n100\r\n",
+        )
+        .unwrap();
+        assert_eq!(
+            command,
+            Command::Set {
+                key: BString::from("elephants"),
+                value: BString::from("horses"),
+                opts: SetOptions {
+                    expiry: Some(Duration::from_millis(100))
+                }
             }
         )
     }

@@ -1,19 +1,21 @@
+use std::{collections::HashMap, sync::Arc};
+
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
 
-use crate::redis::{database::DataBase, Command};
 use anyhow::{Context, Result};
 use bstr::ByteSlice;
-use std::{collections::HashMap, sync::Arc};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     task,
 };
 
+use crate::redis::{database::Database, Command};
+
 mod redis;
 
-async fn handle_connection(mut stream: TcpStream, database: Arc<DataBase>) -> Result<()> {
+async fn handle_connection(mut stream: TcpStream, database: Arc<Database>) -> Result<()> {
     let mut buf = vec![0u8; 512];
 
     loop {
@@ -46,7 +48,7 @@ async fn main() -> Result<()> {
         .await
         .context("failed binding tcp listener to adress")?;
 
-    let database = Arc::new(DataBase::new(HashMap::new()));
+    let database = Arc::new(Database::new(HashMap::new()));
 
     loop {
         let stream = listener.accept().await;
