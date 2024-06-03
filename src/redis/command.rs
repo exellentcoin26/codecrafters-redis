@@ -1,9 +1,9 @@
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use anyhow::{bail, Context, Result};
 use bstr::{BStr, BString, ByteSlice};
 
-use super::database::Database;
+use super::database::{DataValueWithParams, Database};
 use crate::redis::{database, RespValue};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -37,19 +37,39 @@ impl Command {
         Ok(match self {
             Command::Ping => RespValue::SimpleString("PONG".to_string()),
             Command::Echo { value } => RespValue::BulkString(value),
-            Command::Set { key, value, .. } => {
+            Command::Set { key, value, opts } => {
                 let mut database = database.write().await;
+                let value = DataValueWithParams::new(value, opts.expiry);
                 database.insert(key, value);
                 RespValue::SimpleString("OK".to_string())
             }
-            Command::Get { key } => {
-                let database = database.read().await;
-                match database.get(&key) {
-                    Some(value) => RespValue::BulkString(value.clone()),
-                    None => RespValue::Nil,
-                }
-            }
+            Command::Get { key } => Self::get(database, key).await,
         })
+    }
+
+    async fn get(database: &Database, key: database::DataKey) -> RespValue {
+        let database = database.read().await;
+
+        let Some(DataValueWithParams {
+            value,
+            created_at,
+            expiry,
+        }) = database.get(&key)
+        else {
+            return RespValue::Nil;
+        };
+
+        if let Some(expiry) = expiry {
+            if SystemTime::now()
+                .duration_since(*created_at)
+                .map(|d| d < *expiry)
+                .unwrap_or(true)
+            {
+                return RespValue::Nil;
+            }
+        }
+
+        RespValue::BulkString(value.clone())
     }
 }
 
